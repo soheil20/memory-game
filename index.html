@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>چالش حافظه تصویری - پروژه مهندسی نرم‌افزار</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1e1b4b">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}</script>
+
+    <!-- بارگذاری Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- بارگذاری فونت فارسی وزیرمتن -->
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+
+    <style>
+        body {
+            font-family: 'Vazirmatn', system-ui, -apple-system, sans-serif;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            background: radial-gradient(circle at top, #1e1b4b 0%, #0f172a 60%, #020617 100%);
+        }
+
+        /* ساختار سه‌بعدی چرخش کارت‌ها با شتاب‌دهنده سخت‌افزاری (GPU) */
+        .perspective-container {
+            perspective: 1000px;
+        }
+
+        .card-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            transform-style: preserve-3d;
+        }
+
+        .card-flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+
+        .card-face {
+            position: absolute;
+            inset: 0;
+            backface-visibility: hidden;
+            -webkit-backface-visibility: hidden;
+            border-radius: 0.875rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* پشت کارت (حالت بسته) */
+        .card-front {
+            background: linear-gradient(135deg, #312e81 0%, #1e1b4b 100%);
+            border: 2px solid rgba(99, 102, 241, 0.35);
+            box-shadow: 0 6px 15px -3px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+
+        /* روی کارت (تصویر/آیکون) */
+        .card-back {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 2px solid #6366f1;
+            transform: rotateY(180deg);
+            box-shadow: 0 8px 20px -4px rgba(99, 102, 241, 0.35);
+        }
+
+        /* استایل کارت‌های جفت شده (Matched) */
+        .card-matched .card-back {
+            background: linear-gradient(135deg, #064e3b 0%, #022c22 100%);
+            border-color: #10b981;
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.45);
+            animation: matchPulse 0.45s ease-out forwards;
+        }
+
+        /* استایل خطای عدم تطابق (Mismatch) */
+        .card-mismatch .card-back {
+            border-color: #f43f5e;
+            background: linear-gradient(135deg, #4c0519 0%, #1e1b4b 100%);
+            animation: mismatchShake 0.4s ease-in-out;
+        }
+
+        @keyframes matchPulse {
+            0% { transform: rotateY(180deg) scale(1); }
+            50% { transform: rotateY(180deg) scale(1.1); }
+            100% { transform: rotateY(180deg) scale(1); }
+        }
+
+        @keyframes mismatchShake {
+            0%, 100% { transform: rotateY(180deg) translateX(0); }
+            25% { transform: rotateY(180deg) translateX(-5px); }
+            75% { transform: rotateY(180deg) translateX(5px); }
+        }
+
+        /* اسکرول‌بار سفارشی برای مودال */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 9999px;
+        }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col items-center justify-between p-2.5 sm:p-5 overflow-x-hidden">
+
+    <!-- کانتینر اصلی موبایل‌محور -->
+    <main class="w-full max-w-md flex flex-col gap-3 my-auto">
+
+        <!-- هدر، عنوان و پنل وضعیت -->
+        <header class="bg-slate-900/80 backdrop-blur-xl p-3.5 sm:p-4 rounded-2xl border border-slate-700/70 shadow-2xl flex flex-col gap-3">
+            
+            <!-- ردیف اول: عنوان بازی و دکمه‌های صدا/معماری -->
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xl shadow-lg shadow-indigo-500/30">
+                        🧠
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-lg sm:text-xl font-black bg-gradient-to-l from-indigo-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
+                                چالش حافظه تصویری
+                            </h1>
+                        </div>
+                        <p class="text-[11px] text-slate-400">پروژه درس مهندسی نرم‌افزار / ساختمان داده</p>
+                    </div>
+                </div>
+
+                <!-- دکمه‌های ابزار بالا -->
+                <div class="flex items-center gap-1.5">
+                    <!-- دکمه قطع/وصل صدا (Web Audio Synthesizer) -->
+                    <button id="btn-sound" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 flex items-center justify-center text-slate-200 active:scale-95 transition-all" title="قطع/وصل افکت صوتی">
+                        <span id="sound-icon" class="text-base">🔊</span>
+                    </button>
+
+                    <!-- دکمه مستندات معماری کد (مخصوص ارائه به استاد) -->
+                    <button id="btn-tech-info" class="flex items-center gap-1.5 bg-indigo-600/90 hover:bg-indigo-500 active:scale-95 text-white font-bold py-2 px-3 rounded-xl text-xs shadow-lg shadow-indigo-600/25 transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+                        </svg>
+                        <span>معماری کد</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ردیف دوم: انتخاب سطح دشواری (آسان، متوسط، سخت) -->
+            <div class="grid grid-cols-3 gap-1.5 bg-slate-950/80 p-1 rounded-xl border border-slate-800">
+                <button data-level="easy" class="level-btn py-1.5 px-2 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow">
+                    آسان (۴×۳)
+                </button>
+                <button data-level="medium" class="level-btn py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200">
+                    متوسط (۴×۴)
+                </button>
+                <button data-level="hard" class="level-btn py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200">
+                    سخت (۵×۴)
+                </button>
+            </div>
+
+            <!-- ردیف سوم: آمار لحظه‌ای بازی (امتیاز، حرکت، زمان، ستاره‌ها) -->
+            <div class="grid grid-cols-4 gap-2">
+                <!-- امتیاز و ضریب کمبو -->
+                <div class="bg-slate-950/70 border border-slate-800/90 p-2 rounded-xl flex flex-col items-center justify-center relative">
+                    <span class="text-[10px] text-slate-400 font-semibold">امتیاز</span>
+                    <span id="score-display" class="text-sm sm:text-base font-black text-amber-400">۰</span>
+                    <span id="combo-badge" class="hidden absolute -top-2 -left-1 bg-pink-600 text-white text-[9px] font-black px-1.5 py-0.2 rounded-full shadow animate-bounce">
+                        x۲
+                    </span>
+                </div>
+
+                <!-- تعداد حرکات -->
+                <div class="bg-slate-950/70 border border-slate-800/90 p-2 rounded-xl flex flex-col items-center justify-center">
+                    <span class="text-[10px] text-slate-400 font-semibold">حرکات</span>
+                    <span id="moves-display" class="text-sm sm:text-base font-black text-indigo-300">۰</span>
+                </div>
+
+                <!-- تایمر -->
+                <div class="bg-slate-950/70 border border-slate-800/90 p-2 rounded-xl flex flex-col items-center justify-center">
+                    <span class="text-[10px] text-slate-400 font-semibold">زمان</span>
+                    <span id="timer-display" class="text-sm sm:text-base font-black text-emerald-400 font-mono" dir="ltr">۰۰:۰۰</span>
+                </div>
+
+                <!-- دقت و ستاره‌ها -->
+                <div class="bg-slate-950/70 border border-slate-800/90 p-2 rounded-xl flex flex-col items-center justify-center">
+                    <span class="text-[10px] text-slate-400 font-semibold">عملکرد</span>
+                    <div id="stars-display" class="text-xs sm:text-sm tracking-tighter text-amber-400">
+                        ⭐⭐⭐
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- نوار وضعیت پیش‌نمایش یا راهنما -->
+        <div class="flex items-center justify-between bg-slate-900/60 border border-slate-800/80 px-3.5 py-2 rounded-xl text-xs">
+            <div class="flex items-center gap-2">
+                <span id="status-indicator" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span id="status-text" class="text-slate-300 font-medium">جفت‌های یکسان را پیدا کنید!</span>
+            </div>
+            <div class="text-slate-400 text-[11px]">
+                بهترین رکورد: <strong id="best-record-display" class="text-amber-400">---</strong>
+            </div>
+        </div>
+
+        <!-- صفحه اصلی چیدمان کارت‌ها (Grid) -->
+        <section class="bg-slate-900/75 backdrop-blur-md p-3 sm:p-4 rounded-2xl border border-slate-700/70 shadow-2xl relative">
+            <div id="cards-grid" class="grid grid-cols-4 gap-2.5 sm:gap-3 w-full aspect-[4/3] sm:aspect-square max-h-[54vh] mx-auto">
+                <!-- کارت‌ها توسط جاوااسکریپت ساخته و رندر می‌شوند -->
+            </div>
+        </section>
+
+        <!-- فوتر کنترل‌ها: شروع مجدد و دکمه چشمک راهنما (Hint) -->
+        <footer class="grid grid-cols-2 gap-2.5">
+            <!-- دکمه راهنما (چشمک ۱ ثانیه‌ای) -->
+            <button id="btn-hint" class="flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none active:scale-95 text-amber-300 border border-slate-700 font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg transition-all">
+                <span>👁️</span>
+                <span>چشمک راهنما</span>
+                <span id="hint-count-badge" class="bg-amber-500/20 border border-amber-400/40 text-amber-300 px-2 py-0.5 rounded-lg text-xs">۲</span>
+            </button>
+
+            <!-- دکمه بازی جدید -->
+            <button id="btn-restart" class="flex items-center justify-center gap-2 bg-gradient-to-l from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 active:scale-95 text-white font-bold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-lg shadow-indigo-600/25 transition-all">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.3">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>شروع بازی جدید</span>
+            </button>
+        </footer>
+
+    </main>
+
+    <!-- مودال پیروزی و پایان مرحله -->
+    <div id="win-modal" class="hidden fixed inset-0 bg-slate-950/85 backdrop-blur-md z-40 flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-3xl max-w-sm w-full p-6 text-center shadow-2xl flex flex-col items-center relative overflow-hidden">
+            
+            <!-- نشان رکورد جدید -->
+            <div id="new-record-badge" class="hidden mb-3 bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-xs font-black px-3 py-1 rounded-full shadow-lg">
+                🔥 رکورد جدید در این سطح!
+            </div>
+
+            <div class="w-16 h-16 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-4xl mb-3 shadow-inner">
+                🏆
+            </div>
+
+            <h2 class="text-2xl font-black text-white mb-1">آفرین! حافظه عالی!</h2>
+            <p class="text-xs text-slate-400 mb-4">تمامی کارت‌ها با موفقیت جفت شدند.</p>
+
+            <!-- نمایش ستاره‌های کسب شده -->
+            <div id="win-stars" class="text-3xl tracking-widest mb-4">
+                ⭐⭐⭐
+            </div>
+
+            <!-- جدول خلاصه عملکرد -->
+            <div class="grid grid-cols-3 gap-2 w-full bg-slate-950/80 border border-slate-800 p-3 rounded-2xl mb-5 text-xs">
+                <div class="flex flex-col gap-1">
+                    <span class="text-slate-400">امتیاز نهایی</span>
+                    <strong id="win-score" class="text-base text-amber-400 font-black">۰</strong>
+                </div>
+                <div class="flex flex-col gap-1 border-x border-slate-800">
+                    <span class="text-slate-400">تعداد حرکت</span>
+                    <strong id="win-moves" class="text-base text-indigo-300 font-black">۰</strong>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <span class="text-slate-400">زمان کل</span>
+                    <strong id="win-time" class="text-base text-emerald-400 font-black" dir="ltr">۰۰:۰۰</strong>
+                </div>
+            </div>
+
+            <button id="btn-win-play-again" class="w-full bg-gradient-to-l from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 active:scale-95 text-slate-950 font-black py-3.5 px-6 rounded-xl text-sm shadow-lg shadow-emerald-600/25 transition-all">
+                بازی مجدد
+            </button>
+        </div>
+    </div>
+
+    <!-- مودال مستندات فنی و معماری کد (ویژه ارائه دانشگاهی به استاد) -->
+    <div id="tech-modal" class="hidden fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-3 sm:p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+            <!-- هدر مودال -->
+            <div class="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-950/60">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">🎓</span>
+                    <h3 class="font-bold text-sm sm:text-base text-white">مستندات فنی و الگوریتم‌ها (ویژه جلسه دفاع)</h3>
+                </div>
+                <button id="btn-close-tech" class="text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 w-8 h-8 rounded-lg flex items-center justify-center transition-colors">
+                    ✕
+                </button>
+            </div>
+
+            <!-- متن توضیحات فنی -->
+            <div class="p-4 sm:p-5 overflow-y-auto space-y-3.5 text-xs sm:text-sm leading-relaxed text-slate-300">
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+                    <h4 class="font-bold text-indigo-400 mb-1">۱. الگوریتم بُر زدن فیشر-ییتس (Fisher-Yates Shuffle)</h4>
+                    <p>
+                        برای توزیع کاملاً تصادفی و بدون سوگیری (Unbiased) کارت‌ها، به جای استفاده از <code class="text-amber-300 bg-slate-900 px-1 rounded">Array.sort()</code>، از الگوریتم استاندارد <strong>Fisher-Yates</strong> با پیچیدگی زمانی خطی <span dir="ltr" class="font-mono text-emerald-400">O(n)</span> و پیچیدگی مکانی <span dir="ltr" class="font-mono text-emerald-400">O(1)</span> (درجا / In-place) استفاده شده است.
+                    </p>
+                </div>
+
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+                    <h4 class="font-bold text-indigo-400 mb-1">۲. ماشین وضعیت متناهی (FSM) و جلوگیری از Race Condition</h4>
+                    <p>
+                        در بازی‌های حافظه، کلیک سریع کاربر روی کارت سوم پیش از بسته شدن دو کارت قبلی می‌تواند وضعیت بازی را مختل کند. با تعریف قفل منطقی <code class="text-amber-300 bg-slate-900 px-1 rounded">isBoardLocked</code> و نگهداری آرایه <code class="text-amber-300 bg-slate-900 px-1 rounded">flippedCards</code>، تا زمان اتمام انیمیشن بررسی تطابق، ورودی‌های اضافی مسدود می‌شوند.
+                    </p>
+                </div>
+
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+                    <h4 class="font-bold text-indigo-400 mb-1">۳. رندر سه‌بعدی با شتاب‌دهنده سخت‌افزاری (CSS3 3D Transforms)</h4>
+                    <p>
+                        چرخش کارت‌ها بدون تحمیل بار محاسباتی به جاوااسکریپت و از طریق ویژگی‌های <code class="text-emerald-300 bg-slate-900 px-1 rounded">transform-style: preserve-3d</code> و <code class="text-emerald-300 bg-slate-900 px-1 rounded">backface-visibility: hidden</code> مستقیماً روی پردازنده گرافیکی (GPU) موبایل اجرا می‌شود.
+                    </p>
+                </div>
+
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-3.5">
+                    <h4 class="font-bold text-indigo-400 mb-1">۴. سنتز صوتی بلادرنگ (Web Audio API Synthesizer)</h4>
+                    <p>
+                        تمام افکت‌های صوتی (ورق زدن، تطابق موفق، خطا و پیروزی) بدون وابستگی به فایل‌های صوتی خارجی (MP3/WAV) و با تولید امواج سینوسی و مثلثی در <code class="text-emerald-300 bg-slate-900 px-1 rounded">AudioContext</code> مرورگر تولید می‌شوند.
+                    </p>
+                </div>
+            </div>
+
+            <!-- فوتر مودال -->
+            <div class="p-3.5 border-t border-slate-800 bg-slate-950/60 flex justify-end">
+                <button id="btn-close-tech-footer" class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-5 rounded-xl text-xs sm:text-sm transition-all">
+                    متوجه شدم، بازگشت به بازی
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- اسکریپت کامل منطق بازی با معماری شیءگرا (OOP) -->
+    <script>
+        /**
+         * کلاس تولیدکننده افکت‌های صوتی با استفاده از Web Audio API
+         * بدون نیاز به لود فایل صوتی از اینترنت
+         */
+        class SoundSynthesizer {
+            constructor() {
+                this.ctx = null;
+                this.isMuted = false;
+            }
+
+            initContext() {
+                if (!this.ctx) {
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (AudioCtx) this.ctx = new AudioCtx();
+                }
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            playTone(freq, type = 'sine', duration = 0.12, delay = 0, volume = 0.12) {
+                if (this.isMuted) return;
+                try {
+                    this.initContext();
+                    if (!this.ctx) return;
+
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    const startTime = this.ctx.currentTime + delay;
+
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, startTime);
+
+                    gain.gain.setValueAtTime(volume, startTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start(startTime);
+                    osc.stop(startTime + duration);
+                } catch (e) {
+                    // نادیده گرفتن خطا در صورت مسدود بودن صدا در مرورگر
+                }
+            }
+
+            playFlip() {
+                this.playTone(420, 'sine', 0.08, 0, 0.1);
+            }
+
+            playMatch() {
+                this.playTone(523.25, 'triangle', 0.12, 0, 0.15);   // نت C5
+                this.playTone(659.25, 'triangle', 0.18, 0.09, 0.15); // نت E5
+            }
+
+            playMismatch() {
+                this.playTone(240, 'sawtooth', 0.12, 0, 0.08);
+                this.playTone(190, 'sawtooth', 0.16, 0.1, 0.08);
+            }
+
+            playWin() {
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((note, idx) => {
+                    this.playTone(note, 'triangle', 0.22, idx * 0.1, 0.16);
+                });
+            }
+        }
+
+        /**
+         * کلاس اصلی بازی چالش حافظه تصویری (MemoryMatchGame)
+         */
+        class MemoryMatchGame {
+            constructor() {
+                // بانک آیکون‌های تصویری با کنتراست بالا برای کارت‌ها
+                this.iconPool = [
+                    '🚀', '🪐', '🔮', '🧬', '⚡',
+                    '💎', '🦊', '🐉', '🌈', '🔥',
+                    '🍀', '👑', '🎯', '🛸', '🧩'
+                ];
+
+                // تنظیمات سطوح دشواری
+                this.levels = {
+                    easy:   { pairs: 6,  cols: 4, label: 'آسان',   star3Moves: 9,  star2Moves: 13 },
+                    medium: { pairs: 8,  cols: 4, label: 'متوسط',  star3Moves: 13, star2Moves: 18 },
+                    hard:   { pairs: 10, cols: 4, label: 'سخت',   star3Moves: 17, star2Moves: 24 }
+                };
+
+                this.currentLevelKey = 'easy';
+                this.cards = [];
+                this.flippedCards = [];
+                this.matchedPairs = 0;
+                this.moves = 0;
+                this.score = 0;
+                this.combo = 0;
+                this.hintsRemaining = 2;
+
+                // قفل منطقی برای جلوگیری از Race Condition در کلیک‌های متوالی
+                this.isBoardLocked = false;
+                this.isPreviewPhase = false;
+
+                // مدیریت تایمر
+                this.secondsElapsed = 0;
+                this.timerInterval = null;
+                this.isTimerRunning = false;
+
+                this.sound = new SoundSynthesizer();
+
+                this.cacheDOM();
+                this.bindEvents();
+                this.startNewGame();
+            }
+
+            /**
+             * ذخیره رفرنس المان‌های DOM برای کارایی بالاتر
+             */
+            cacheDOM() {
+                this.gridEl = document.getElementById('cards-grid');
+                this.scoreEl = document.getElementById('score-display');
+                this.movesEl = document.getElementById('moves-display');
+                this.timerEl = document.getElementById('timer-display');
+                this.starsEl = document.getElementById('stars-display');
+                this.comboBadgeEl = document.getElementById('combo-badge');
+                this.statusTextEl = document.getElementById('status-text');
+                this.statusDotEl = document.getElementById('status-indicator');
+                this.bestRecordEl = document.getElementById('best-record-display');
+                this.hintBtn = document.getElementById('btn-hint');
+                this.hintCountBadge = document.getElementById('hint-count-badge');
+
+                // المان‌های مودال برد
+                this.winModal = document.getElementById('win-modal');
+                this.winScoreEl = document.getElementById('win-score');
+                this.winMovesEl = document.getElementById('win-moves');
+                this.winTimeEl = document.getElementById('win-time');
+                this.winStarsEl = document.getElementById('win-stars');
+                this.newRecordBadge = document.getElementById('new-record-badge');
+            }
+
+            /**
+             * تبدیل اعداد انگلیسی به فارسی
+             */
+            toPersianDigits(num) {
+                const persian = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+                return String(num).replace(/\d/g, d => persian[d]);
+            }
+
+            /**
+             * فرمت کردن ثانیه‌ها به صورت ۰۰:۰۰ فارسی
+             */
+            formatTime(totalSec) {
+                const mins = String(Math.floor(totalSec / 60)).padStart(2, '0');
+                const secs = String(totalSec % 60).padStart(2, '0');
+                return this.toPersianDigits(`${mins}:${secs}`);
+            }
+
+            /**
+             * الگوریتم بُر زدن فیشر-ییتس (Fisher-Yates Shuffle)
+             * پیچیدگی زمانی: O(n)
+             */
+            shuffleArray(array) {
+                const arr = [...array];
+                for (let i = arr.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+                return arr;
+            }
+
+            /**
+             * شروع یک دور بازی جدید
+             */
+            startNewGame() {
+                this.stopTimer();
+                const config = this.levels[this.currentLevelKey];
+
+                this.matchedPairs = 0;
+                this.moves = 0;
+                this.score = 0;
+                this.combo = 0;
+                this.secondsElapsed = 0;
+                this.hintsRemaining = 2;
+                this.flippedCards = [];
+                this.isBoardLocked = true;
+                this.isPreviewPhase = true;
+
+                this.winModal.classList.add('hidden');
+                this.updateStatsUI();
+                this.updateBestRecordUI();
+
+                // انتخاب تصادفی آیکون‌ها و ساخت جفت‌ها
+                const shuffledIcons = this.shuffleArray(this.iconPool);
+                const selectedIcons = shuffledIcons.slice(0, config.pairs);
+                const pairDeck = this.shuffleArray([...selectedIcons, ...selectedIcons]);
+
+                // رندر کارت‌ها در صفحه
+                this.renderBoard(pairDeck);
+
+                // پیش‌نمایش اولیه ۱.۸ ثانیه‌ای برای به خاطر سپردن جای کارت‌ها
+                this.setStatus('کارت‌ها را به خاطر بسپارید...', 'amber');
+                setTimeout(() => {
+                    this.FlipAllCards(true);
+                    setTimeout(() => {
+                        this.FlipAllCards(false);
+                        this.isBoardLocked = false;
+                        this.isPreviewPhase = false;
+                        this.setStatus('حالا جفت‌های یکسان را پیدا کنید!', 'emerald');
+                    }, 1600);
+                }, 250);
+            }
+
+            /**
+             * ساخت و درج المان‌های HTML کارت‌ها در شبکه
+             */
+            renderBoard(deck) {
+                this.gridEl.innerHTML = '';
+
+                // تنظیم نسبت ابعاد گرید بر اساس سطح دشواری
+                if (this.currentLevelKey === 'easy') {
+                    this.gridEl.className = 'grid grid-cols-4 gap-2.5 sm:gap-3 w-full aspect-[4/3] max-h-[52vh] mx-auto';
+                } else if (this.currentLevelKey === 'medium') {
+                    this.gridEl.className = 'grid grid-cols-4 gap-2.5 sm:gap-3 w-full aspect-square max-h-[54vh] mx-auto';
+                } else {
+                    this.gridEl.className = 'grid grid-cols-4 gap-2 sm:gap-2.5 w-full aspect-[4/5] max-h-[58vh] mx-auto';
+                }
+
+                this.cards = deck.map((icon, index) => {
+                    const cardBtn = document.createElement('button');
+                    cardBtn.type = 'button';
+                    cardBtn.className = 'perspective-container w-full h-full focus:outline-none group';
+                    cardBtn.dataset.index = index;
+                    cardBtn.dataset.icon = icon;
+                    cardBtn.setAttribute('aria-label', `کارت شماره ${index + 1}`);
+
+                    cardBtn.innerHTML = `
+                        <div class="card-inner">
+                            <!-- پشت کارت -->
+                            <div class="card-face card-front group-hover:border-indigo-400/70 transition-colors">
+                                <span class="text-indigo-400/40 text-lg sm:text-xl font-black select-none">؟</span>
+                            </div>
+                            <!-- روی کارت (آیکون) -->
+                            <div class="card-face card-back">
+                                <span class="text-2xl sm:text-3xl select-none">${icon}</span>
+                            </div>
+                        </div>
+                    `;
+
+                    cardBtn.addEventListener('click', () => this.handleCardClick(cardBtn));
+                    this.gridEl.appendChild(cardBtn);
+                    return cardBtn;
+                });
+            }
+
+            /**
+             * چرخاندن تمام کارت‌های جفت‌نشده (برای پیش‌نمایش اول بازی یا دکمه چشمک راهنما)
+             */
+            FlipAllCards(show) {
+                this.cards.forEach(card => {
+                    if (!card.classList.contains('card-matched')) {
+                        if (show) {
+                            card.classList.add('card-flipped');
+                        } else if (!this.flippedCards.includes(card)) {
+                            card.classList.remove('card-flipped');
+                        }
+                    }
+                });
+            }
+
+            /**
+             * مدیریت کلیک یا لمس روی هر کارت
+             */
+            handleCardClick(cardEl) {
+                // بررسی قفل نبودن صفحه، تکراری نبودن کارت و جفت نشدن قبلی
+                if (
+                    this.isBoardLocked ||
+                    cardEl.classList.contains('card-flipped') ||
+                    cardEl.classList.contains('card-matched')
+                ) {
+                    return;
+                }
+
+                // شروع تایمر با اولین حرکت واقعی کاربر
+                if (!this.isTimerRunning) {
+                    this.startTimer();
+                }
+
+                this.sound.playFlip();
+                cardEl.classList.add('card-flipped');
+                this.flippedCards.push(cardEl);
+
+                // اگر ۲ کارت باز شده‌اند، بررسی تطابق انجام شود
+                if (this.flippedCards.length === 2) {
+                    this.moves += 1;
+                    this.isBoardLocked = true;
+                    this.checkForMatch();
+                }
+
+                this.updateStatsUI();
+            }
+
+            /**
+             * بررسی تطابق دو کارت باز شده
+             */
+            checkForMatch() {
+                const [card1, card2] = this.flippedCards;
+                const isMatch = card1.dataset.icon === card2.dataset.icon;
+
+                if (isMatch) {
+                    this.handleMatchSuccess(card1, card2);
+                } else {
+                    this.handleMatchFailure(card1, card2);
+                }
+            }
+
+            /**
+             * زمانی که دو کارت با هم جفت می‌شوند
+             */
+            handleMatchSuccess(card1, card2) {
+                this.matchedPairs += 1;
+                this.combo += 1;
+
+                // محاسبه امتیاز پایه به علاوه پاداش کمبوی متوالی
+                const gainedPoints = 100 * this.combo;
+                this.score += gainedPoints;
+
+                setTimeout(() => {
+                    this.sound.playMatch();
+                    card1.classList.add('card-matched');
+                    card2.classList.add('card-matched');
+                    this.flippedCards = [];
+                    this.isBoardLocked = false;
+
+                    if (this.combo > 1) {
+                        this.setStatus(`ترکیب فوق‌العاده! ضریب امتیاز x${this.toPersianDigits(this.combo)} 🔥`, 'pink');
+                    } else {
+                        this.setStatus('تطابق صحیح! ادامه بده...', 'emerald');
+                    }
+
+                    this.updateStatsUI();
+
+                    // بررسی اتمام بازی
+                    const totalPairs = this.levels[this.currentLevelKey].pairs;
+                    if (this.matchedPairs === totalPairs) {
+                        this.handleGameWin();
+                    }
+                }, 280);
+            }
+
+            /**
+             * زمانی که دو کارت با هم متفاوت هستند
+             */
+            handleMatchFailure(card1, card2) {
+                this.combo = 0;
+
+                setTimeout(() => {
+                    this.sound.playMismatch();
+                    card1.classList.add('card-mismatch');
+                    card2.classList.add('card-mismatch');
+                    this.setStatus('جفت نبودند! جای آن‌ها را به خاطر بسپار.', 'rose');
+                    this.updateStatsUI();
+                }, 320);
+
+                // برگرداندن کارت‌ها به حالت بسته پس از مکث کوتاه
+                setTimeout(() => {
+                    card1.classList.remove('card-flipped', 'card-mismatch');
+                    card2.classList.remove('card-flipped', 'card-mismatch');
+                    this.flippedCards = [];
+                    this.isBoardLocked = false;
+                }, 950);
+            }
+
+            /**
+             * استفاده از قابلیت «چشمک راهنما» (Hint)
+             */
+            useHint() {
+                if (this.isBoardLocked || this.hintsRemaining <= 0) return;
+
+                this.hintsRemaining -= 1;
+                this.isBoardLocked = true;
+                this.sound.playFlip();
+                this.setStatus('چشمک راهنما فعال شد! دقت کن...', 'amber');
+                this.updateStatsUI();
+
+                this.FlipAllCards(true);
+
+                setTimeout(() => {
+                    this.FlipAllCards(false);
+                    this.isBoardLocked = false;
+                    this.setStatus('ادامه بازی...', 'emerald');
+                }, 1100);
+            }
+
+            /**
+             * محاسبه تعداد ستاره‌ها (۱ تا ۳ ستاره) بر اساس دقت حرکت
+             */
+            calculateStars() {
+                const config = this.levels[this.currentLevelKey];
+                if (this.moves <= config.star3Moves) return 3;
+                if (this.moves <= config.star2Moves) return 2;
+                return 1;
+            }
+
+            /**
+             * مدیریت پایان بازی و نمایش مودال پیروزی
+             */
+            handleGameWin() {
+                this.stopTimer();
+                this.sound.playWin();
+
+                // پاداش زمانی برای اتمام سریع‌تر
+                const timeBonus = Math.max(0, (120 - this.secondsElapsed) * 5);
+                this.score += timeBonus;
+
+                const isNewRecord = this.checkAndSaveRecord();
+                const starsCount = this.calculateStars();
+                const starsString = '⭐'.repeat(starsCount) + '☆'.repeat(3 - starsCount);
+
+                this.winScoreEl.textContent = this.toPersianDigits(this.score);
+                this.winMovesEl.textContent = this.toPersianDigits(this.moves);
+                this.winTimeEl.textContent = this.formatTime(this.secondsElapsed);
+                this.winStarsEl.textContent = starsString;
+
+                if (isNewRecord) {
+                    this.newRecordBadge.classList.remove('hidden');
+                } else {
+                    this.newRecordBadge.classList.add('hidden');
+                }
+
+                this.updateStatsUI();
+                this.updateBestRecordUI();
+
+                setTimeout(() => {
+                    this.winModal.classList.remove('hidden');
+                }, 400);
+            }
+
+            /**
+             * بررسی و ذخیره بهترین رکورد در localStorage به تفکیک سطح دشواری
+             */
+            checkAndSaveRecord() {
+                try {
+                    const storageKey = `uni_memory_best_${this.currentLevelKey}`;
+                    const existingJSON = localStorage.getItem(storageKey);
+                    const currentRecord = existingJSON ? JSON.parse(existingJSON) : null;
+
+                    if (!currentRecord || this.score > currentRecord.score) {
+                        localStorage.setItem(storageKey, JSON.stringify({
+                            score: this.score,
+                            moves: this.moves,
+                            time: this.secondsElapsed
+                        }));
+                        return true;
+                    }
+                } catch (e) {
+                    // نادیده گرفتن خطا در صورت غیرفعال بودن localStorage
+                }
+                return false;
+            }
+
+            /**
+             * نمایش بهترین رکورد ذخیره شده در هدر
+             */
+            updateBestRecordUI() {
+                try {
+                    const storageKey = `uni_memory_best_${this.currentLevelKey}`;
+                    const saved = localStorage.getItem(storageKey);
+                    if (saved) {
+                        const data = JSON.parse(saved);
+                        this.bestRecordEl.textContent = `${this.toPersianDigits(data.score)} امتیاز (${this.toPersianDigits(data.moves)} حرکت)`;
+                    } else {
+                        this.bestRecordEl.textContent = 'ثبت نشده';
+                    }
+                } catch (e) {
+                    this.bestRecordEl.textContent = '---';
+                }
+            }
+
+            /**
+             * به‌روزرسانی مقادیر ظاهری رابط کاربری
+             */
+            updateStatsUI() {
+                this.scoreEl.textContent = this.toPersianDigits(this.score);
+                this.movesEl.textContent = this.toPersianDigits(this.moves);
+                this.timerEl.textContent = this.formatTime(this.secondsElapsed);
+
+                const stars = this.calculateStars();
+                this.starsEl.textContent = '⭐'.repeat(stars) + '☆'.repeat(3 - stars);
+
+                // نمایش ضریب کمبو
+                if (this.combo > 1) {
+                    this.comboBadgeEl.textContent = `x${this.toPersianDigits(this.combo)}`;
+                    this.comboBadgeEl.classList.remove('hidden');
+                } else {
+                    this.comboBadgeEl.classList.add('hidden');
+                }
+
+                // وضعیت دکمه راهنما
+                this.hintCountBadge.textContent = this.toPersianDigits(this.hintsRemaining);
+                this.hintBtn.disabled = this.hintsRemaining <= 0 || this.isPreviewPhase;
+            }
+
+            /**
+             * تغییر پیام نوار راهنما
+             */
+            setStatus(message, color = 'emerald') {
+                this.statusTextEl.textContent = message;
+                const colorMap = {
+                    emerald: 'bg-emerald-400',
+                    amber: 'bg-amber-400',
+                    rose: 'bg-rose-500',
+                    pink: 'bg-pink-500'
+                };
+                this.statusDotEl.className = `w-2 h-2 rounded-full animate-pulse ${colorMap[color] || 'bg-emerald-400'}`;
+            }
+
+            /**
+             * مدیریت تایمر بازی
+             */
+            startTimer() {
+                if (this.isTimerRunning) return;
+                this.isTimerRunning = true;
+                this.timerInterval = setInterval(() => {
+                    this.secondsElapsed += 1;
+                    this.timerEl.textContent = this.formatTime(this.secondsElapsed);
+                }, 1000);
+            }
+
+            stopTimer() {
+                this.isTimerRunning = false;
+                if (this.timerInterval) {
+                    clearInterval(this.timerInterval);
+                    this.timerInterval = null;
+                }
+            }
+
+            /**
+             * اتصال رویدادهای دکمه‌ها و مودال‌ها
+             */
+            bindEvents() {
+                // دکمه شروع مجدد و راهنما
+                document.getElementById('btn-restart').addEventListener('click', () => this.startNewGame());
+                document.getElementById('btn-win-play-again').addEventListener('click', () => this.startNewGame());
+                this.hintBtn.addEventListener('click', () => this.useHint());
+
+                // دکمه‌های تغییر سطح دشواری
+                const levelBtns = document.querySelectorAll('.level-btn');
+                levelBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const selectedLevel = btn.dataset.level;
+                        if (selectedLevel === this.currentLevelKey) return;
+
+                        this.currentLevelKey = selectedLevel;
+                        levelBtns.forEach(b => {
+                            b.className = 'level-btn py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-slate-400 hover:text-slate-200';
+                        });
+                        btn.className = 'level-btn py-1.5 px-2 rounded-lg text-xs font-bold transition-all bg-indigo-600 text-white shadow';
+
+                        this.startNewGame();
+                    });
+                });
+
+                // دکمه قطع و وصل صدا
+                const soundBtn = document.getElementById('btn-sound');
+                const soundIcon = document.getElementById('sound-icon');
+                soundBtn.addEventListener('click', () => {
+                    this.sound.isMuted = !this.sound.isMuted;
+                    soundIcon.textContent = this.sound.isMuted ? '🔇' : '🔊';
+                });
+
+                // مودال معماری کد (ویژه ارائه دانشگاهی)
+                const techModal = document.getElementById('tech-modal');
+                document.getElementById('btn-tech-info').addEventListener('click', () => {
+                    techModal.classList.remove('hidden');
+                });
+                document.getElementById('btn-close-tech').addEventListener('click', () => {
+                    techModal.classList.add('hidden');
+                });
+                document.getElementById('btn-close-tech-footer').addEventListener('click', () => {
+                    techModal.classList.add('hidden');
+                });
+                techModal.addEventListener('click', (e) => {
+                    if (e.target === techModal) techModal.classList.add('hidden');
+                });
+            }
+        }
+
+        // راه‌اندازی بازی پس از بارگذاری کامل صفحه
+        window.onload = function () {
+            new MemoryMatchGame();
+        };
+    </script>
+</body>
+</html>
